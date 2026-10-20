@@ -1,0 +1,21 @@
+[Unit]
+Description=Maxial photo lookup
+After=network.target
+
+[Service]
+Type=simple
+User=maxial
+Group=maxial
+WorkingDirectory=/opt/maxial/current
+EnvironmentFile=/etc/maxial/app.env
+ExecStart=/usr/bin/node /opt/maxial/current/dist/server.js
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/srv/maxial/photos
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

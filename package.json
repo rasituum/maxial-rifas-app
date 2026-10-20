@@ -1,0 +1,29 @@
+{
+  "name": "maxial-rifas-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test scripts",
+    "test": "npm run build && node --test test/*.test.ts",
+    "start": "node --env-file=.env dist/server.js",
+    "hash-password": "npm run build --silent && node scripts/hash-password.ts"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "express-session": "^1.19.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.19.0",
+    "@types/node": "^24.19.2",
+    "eslint": "^10.13.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0"
+  }
+}
