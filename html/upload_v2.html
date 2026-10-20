@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <!-- Design by foolishdeveloper.com -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Festa do Maxial 2023</title>
+    <!-- Google Font -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@500&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <form name="formRifas"  method="post" action="/cgi-bin/upload.cgi" ENCTYPE="multipart/form-data">
+    <div class="container">
+      <div class="inputfield">
+        <input type="number" maxlength="1" class="input" disabled />
+        <input type="number" maxlength="1" class="input" disabled />
+        <input type="number" maxlength="1" class="input" disabled />
+      </div>
+      <div id="upload">
+        <label for="photo">Choose a photo
+	  <input type="file" name="photo" id="photo" class="inputfile" required/>
+	</label>
+      </div>
+      <button class="hide" id="submit" onclick="searchRifas()">upload</button>
+      <img src="refresh.png" type="button" class="hide" id="refresh" onclick="startInput()"/>
+    </div>
+    <input type="hidden" id="numero" name="numero" />
+    </form>
+    <!-- Script -->
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,28 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Festa do Maxial 2026</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <form name="formRifas" method="get" action="/cgi-bin/search_json.cgi">
+      <div class="container">
+        <div class="inputfield">
+          <input type="number" maxlength="1" class="input" disabled />
+          <input type="number" maxlength="1" class="input" disabled />
+          <input type="number" maxlength="1" class="input" disabled />
+        </div>
+        <button type="button" class="btn btn-primary hide" id="submit" onclick="searchRifas()">Rechercher</button>
+        <button type="button" class="btn btn-secondary hide" id="refresh" onclick="startInput()">
+          <img src="refresh.png" alt="Rafraîchir" class="btn-icon" />
+        </button>
+        <a href="upload_v2.html" class="btn btn-upload">Télécharger une image</a>
+      </div>
+      <input type="hidden" id="numero" name="numero" />
+    </form>
+    <script src="script.js"></script>
+  </body>
+</html>

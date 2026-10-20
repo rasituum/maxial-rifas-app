@@ -1,0 +1,112 @@
+
+* {
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  font-family: 'Poppins', sans-serif;
+}
+
+body {
+  height: 100vh;
+  background-image: url("cartaz_2026.jpg");
+  background-size: cover;
+  background-repeat: no-repeat;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.container {
+  width: 90%;
+  max-width: 400px;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 2em;
+  border-radius: 15px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+.inputfield {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 1.5em;
+}
+
+.input {
+  height: 3em;
+  width: 3em;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 1.5em;
+  font-weight: bold;
+  background-color: white;
+  margin: 0 0.2em;
+}
+
+.input:disabled {
+  color: black;
+  background-color: #f9f9f9;
+}
+
+.input:focus {
+  border: 3px solid #4a90e2;
+  outline: none;
+}
+
+/* Boutons modernisés */
+.btn {
+  display: inline-block;
+  padding: 0.8em 1.5em;
+  margin: 0.5em;
+  border: none;
+  border-radius: 8px;
+  font-size: 1em;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-decoration: none;
+  color: white;
+}
+
+.btn-primary {
+  background-color: #4a90e2;
+}
+
+.btn-primary:hover {
+  background-color: #3a7bc8;
+}
+
+.btn-secondary {
+  background-color: #ff6b6b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-secondary:hover {
+  background-color: #ff5252;
+}
+
+.btn-icon {
+  width: 1.2em;
+  height: 1.2em;
+}
+
+.btn-upload {
+  background-color: #2ecc71;
+  width: 100%;
+  margin-top: 1em;
+}
+
+.btn-upload:hover {
+  background-color: #27ae60;
+}
+
+.hide {
+  display: none;
+}
+
+.show {
+  display: inline-block;
+}

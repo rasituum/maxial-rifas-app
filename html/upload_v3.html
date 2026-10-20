@@ -1,0 +1,20 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Télécharger une image</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <form name="formUpload" method="post" action="/cgi-bin/upload.cgi" enctype="multipart/form-data">
+      <div class="container">
+        <h2>Télécharger une image</h2>
+        <input type="file" name="file" id="file" class="inputfile" />
+        <label for="file" class="btn btn-upload">Choisir un fichier</label>
+        <button type="submit" class="btn btn-primary">Envoyer</button>
+      </div>
+    </form>
+  </body>
+</html>

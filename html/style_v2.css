@@ -1,0 +1,91 @@
+* {
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+body {
+  height: 80%;
+  background-image: url("cartaz_2026.jpg");
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+.container {
+  width: 23em;
+  background-color: #ffffff;
+  padding: 1em 1em;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  top: 50%;
+  left: 50%;
+  border-radius: 0.8em;
+  box-shadow: 0 45px 60px rgba(30, 22, 1, 0.3);
+}
+.inputfield {
+  width: 100%;
+  display: flex;
+  justify-content: space-around;
+}
+.input {
+  height: 3em;
+  width: 3em;
+  border: 2px solid #dad9df;
+  outline: none;
+  text-align: center;
+  font-size: 1.5em;
+  font-weight: bold;
+  border-radius: 0.3em;
+  background-color: white;
+  outline: none;
+  /*Hide number field arrows*/
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input:disabled {
+   -webkit-appearance: none;
+   opacity:1;
+}
+#refresh {
+  width: 5%;
+}
+#submit {
+  background-color: #044ecf;
+  border: none;
+  outline: none;
+  font-size: 1.2em;
+  padding: 0.8em 2em;
+  color: #ffffff;
+  border-radius: 0.1em;
+  margin: 1em auto 0 auto;
+  cursor: pointer;
+}
+.show {
+  display: block;
+}
+.hide {
+  display: none;
+}
+.input:disabled {
+  color: black;
+  #background-color: green;
+}
+.input:focus {
+  border: 3px solid #ffb800;
+  #color: green;
+}
+.inputfile {
+  display: none
+}
+#upload {
+  text-align:center;
+  margin: 2em;
+  padding:3%;
+  #border:thin solid black;
+  border: none;
+  background-color: red;
+  color: white;
+  font-weight: bold;
+}

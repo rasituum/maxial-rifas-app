@@ -1,0 +1,44 @@
+body, html {
+  height: 100%;
+  margin: 0;
+  width: auto;
+}
+
+.bg {
+  /* The image used */
+  background-image: url("cartaz.png");
+
+  /* Full height */
+  height: 100%; 
+
+  /* Center and scale the image nicely */
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.btn {
+  border: none;
+  background-color: #FFFFFF;
+  padding: 14px 28px;
+  font-size: +3;
+  cursor: pointer;
+  width: 60%;
+  margin: auto;
+  vertical-align: middle;
+}
+
+input {
+  max-width: 3eu
+}
+
+h1 {
+  text-align: center;
+  color: #FFFFFF;
+  padding: 32px;
+}
+
+a {
+  text-decoration: none;
+  color: black;
+}
