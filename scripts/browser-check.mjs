@@ -1,5 +1,5 @@
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -7,11 +7,13 @@ import { once } from 'node:events';
 import assert from 'node:assert/strict';
 const project = process.cwd();
 const { hashPassword } = await import(project + '/dist/password.js');
+const { createRequire } = await import('node:module');
+const sharp = createRequire(import.meta.url)('sharp');
 const directory = await mkdtemp(join(tmpdir(), 'maxial-browser-'));
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 await writeFile(join(directory, '0007.png'), png);
 const envFile = join(directory, '.env');
-await writeFile(envFile, `NODE_ENV=development\nPORT=31879\nAPP_ORIGIN=http://localhost:31879\nAPP_USERNAME=shared\nAPP_PASSWORD_HASH=${await hashPassword('browser-test')}\nSESSION_SECRET=${'test-only-'.repeat(5)}\nPHOTO_DIRECTORY=${directory}\n`);
+await writeFile(envFile, `NODE_ENV=development\nPORT=31879\nAPP_ORIGIN=http://localhost:31879\nAPP_USERNAME=shared\nADMIN_USERNAME=admin\nADMIN_PASSWORD_HASH=${await hashPassword('admin-test')}\nAPP_PASSWORD_HASH=${await hashPassword('browser-test')}\nSESSION_SECRET=${'test-only-'.repeat(5)}\nPHOTO_DIRECTORY=${directory}\n`);
 const server = spawn(process.execPath, ['--env-file=' + envFile, 'dist/server.js'], { cwd: project, stdio: ['ignore', 'pipe', 'pipe'] });
 let browser;
 try {
@@ -26,6 +28,7 @@ try {
   await page.getByLabel('Username').fill('shared');
   await page.getByLabel('Password').fill('browser-test');
   await Promise.all([page.waitForURL('http://localhost:31879/'), page.getByRole('button', { name: 'Sign in' }).click()]);
+  assert.equal(await page.getByRole('link', { name: 'Upload a photo' }).count(), 0);
   await page.getByLabel('Photo number').fill('7');
   await page.getByRole('button', { name: 'Show photo' }).click();
   const image = page.getByRole('img', { name: 'Photo 0007' });
@@ -41,10 +44,63 @@ try {
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.goto('http://localhost:31879/photos/7');
   assert.equal(new URL(page.url()).pathname, '/login');
+  await page.getByLabel('Username').fill('admin');
+  await page.getByLabel('Password').fill('admin-test');
+  await Promise.all([page.waitForURL('http://localhost:31879/'), page.getByRole('button', { name: 'Sign in' }).click()]);
+  await page.getByRole('link', { name: 'Upload a photo' }).click();
+  await page.setViewportSize({ width: 375, height: 812 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.screenshot({ path: join(tmpdir(), 'maxial-upload.png'), fullPage: true });
+  const selected = page.locator('form').filter({ has: page.getByLabel('Choose a file') });
+  assert.equal(await page.locator('form').count(), 1);
+  assert.equal(await page.locator('input[type="file"]').count(), 1);
+  assert.equal(await page.getByLabel('Photo number').count(), 1);
+  assert.equal(await selected.getByRole('button', { name: 'Upload photo', exact: true }).count(), 1);
+  assert.equal(await page.getByLabel('Choose a file').getAttribute('capture'), null);
+  for (const [number, file] of [['20', 'assets/heic-probe.heic'], ['21', 'test/fixtures/oriented.heic']]) {
+    await selected.getByLabel('Photo number').fill(number);
+    await selected.getByLabel('Choose a file').setInputFiles(join(project, file));
+    await Promise.all([page.waitForURL(`**/?number=00${number}`), selected.getByRole('button', { name: 'Upload photo' }).click()]);
+    await page.waitForFunction(() => document.querySelector('img')?.naturalWidth > 0, null, { timeout: 10000 });
+    await page.getByRole('link', { name: 'Upload a photo' }).click();
+  }
+  const replacement = await sharp({ create: { width: 80, height: 40, channels: 3, background: 'red' } }).png().toBuffer();
+  const prepare = async () => {
+    await selected.getByLabel('Photo number').fill('7');
+    await selected.getByLabel('Choose a file').setInputFiles({ name: 'replacement.png', mimeType: 'image/png', buffer: replacement });
+    await selected.getByRole('button', { name: 'Upload photo' }).click();
+    await page.getByRole('heading', { name: 'Replace a photo?' }).waitFor();
+    await page.waitForFunction(() => [...document.images].every(img => img.naturalWidth > 0), null, { timeout: 10000 });
+  };
+  await prepare();
+  assert.deepEqual(await readFile(join(directory, '0007.png')), png);
+  await page.getByRole('button', { name: 'Cancel replacement' }).click();
+  assert.deepEqual(await readFile(join(directory, '0007.png')), png);
+  await prepare();
+  // Simulate a competing administrator commit using a second authenticated browser context.
+  const second = await browser.newContext();
+  const operator = await second.newPage();
+  await operator.goto('http://localhost:31879/login');
+  await operator.getByLabel('Username').fill('admin'); await operator.getByLabel('Password').fill('admin-test');
+  await Promise.all([operator.waitForURL('http://localhost:31879/'), operator.getByRole('button', { name: 'Sign in' }).click()]);
+  await operator.getByRole('link', { name: 'Upload a photo' }).click();
+  const otherForm = operator.locator('form').filter({ has: operator.getByLabel('Choose a file') });
+  await otherForm.getByLabel('Photo number').fill('7');
+  await otherForm.getByLabel('Choose a file').setInputFiles({ name: 'phone.jpg', mimeType: 'image/jpeg', buffer: await sharp(replacement).jpeg().toBuffer() });
+  await otherForm.getByRole('button', { name: 'Upload photo' }).click();
+  await operator.getByRole('button', { name: 'Confirm replacement' }).click();
+  await operator.waitForURL('**/?number=0007');
+  await second.close();
+  await page.getByRole('button', { name: 'Confirm replacement' }).click();
+  assert.match(await page.getByRole('alert').textContent(), /changed/);
+  await page.getByRole('img', { name: 'Prepared photo 0007' }).waitFor();
+  await page.getByRole('button', { name: 'Confirm replacement' }).click();
+  await page.waitForURL('**/?number=0007');
+  assert.notDeepEqual(await readFile(join(directory, '0007.png')), png);
   await page.setViewportSize({ width: 375, height: 812 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.deepEqual(errors, []);
-  console.log('Browser passed: startup with env file, login, image rendered below form, missing photo, logout, private direct URL, mobile width.');
+  console.log('Browser passed: startup with env file, login, image rendered below form, missing photo, logout, private direct URL, mobile width, single native photo picker without forced capture, HEIC orientation, replacement cancellation, confirmation and conflict renewal.');
 } finally {
   await browser?.close();
   server.kill('SIGKILL');

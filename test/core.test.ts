@@ -26,10 +26,13 @@ test('salted hashes verify without accepting malformed values', async () => {
 test('configuration validates required values and real directory', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'maxial-config-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const env = { APP_USERNAME: 'test', APP_PASSWORD_HASH: await hashPassword('test'), SESSION_SECRET: 'a'.repeat(32), PHOTO_DIRECTORY: directory, APP_ORIGIN: 'http://localhost:3000' };
+  const env = { APP_USERNAME: 'test', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD_HASH: await hashPassword('admin-test'), APP_PASSWORD_HASH: await hashPassword('test'), SESSION_SECRET: 'a'.repeat(32), PHOTO_DIRECTORY: directory, APP_ORIGIN: 'http://localhost:3000' };
   assert.equal((await loadConfig(env)).photoDirectory, directory);
+  await chmod(directory, 0o500);
+  await assert.rejects(loadConfig(env));
+  await chmod(directory, 0o700);
   for (const name of Object.keys(env)) await assert.rejects(loadConfig({ ...env, [name]: '' }));
-  for (const change of [{ PORT: '0' }, { PORT: '1e3' }, { APP_PASSWORD_HASH: 'bad' }, { SESSION_SECRET: 'short' }, { NODE_ENV: 'bad' }, { APP_ORIGIN: 'http://localhost/path' }, { NODE_ENV: 'production' }]) await assert.rejects(loadConfig({ ...env, ...change }));
+  for (const change of [{ ADMIN_USERNAME: 'test' }, { ADMIN_PASSWORD_HASH: 'bad' }, { PORT: '0' }, { PORT: '1e3' }, { APP_PASSWORD_HASH: 'bad' }, { SESSION_SECRET: 'short' }, { NODE_ENV: 'bad' }, { APP_ORIGIN: 'http://localhost/path' }, { NODE_ENV: 'production' }]) await assert.rejects(loadConfig({ ...env, ...change }));
   await writeFile(join(directory, 'file'), 'x');
   await assert.rejects(loadConfig({ ...env, PHOTO_DIRECTORY: join(directory, 'file') }));
   await assert.rejects(loadConfig({ ...env, PHOTO_DIRECTORY: join(directory, 'missing') }));

@@ -2,7 +2,7 @@ import session from 'express-session';
 import type { SessionData } from 'express-session';
 export const SESSION_LIFETIME = 8 * 60 * 60 * 1000;
 declare module 'express-session' {
-  interface SessionData { authenticatedAt?: number }
+  interface SessionData { authenticatedAt?: number; role?: 'consultation' | 'administrator' }
 }
 export class SessionCapacityError extends Error {}
 export class BoundedSessionStore extends session.Store {

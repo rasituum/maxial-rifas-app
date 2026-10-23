@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { chmod, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, rm, symlink, writeFile, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import sharp from 'sharp';
+import { UploadStorage } from '../dist/upload-storage.js';
 import { createApp } from '../dist/app.js';
 import { hashPassword } from '../dist/password.js';
 import { SESSION_LIFETIME, BoundedSessionStore } from '../dist/state.js';
@@ -14,17 +16,19 @@ async function fixture(t: Parameters<Parameters<typeof test>[1]>[0], overrides: 
   const directory = await mkdtemp(join(tmpdir(), 'maxial-http-'));
   await writeFile(join(directory, '0007.png'), png);
   let now = Date.now();
-  const config = { username: 'shared', passwordHash: await hashPassword('test-password'), sessionSecret: 'test-secret-'.repeat(4), photoDirectory: directory, port: 3000, production: false, origin: 'http://localhost', ...overrides };
-  const instance = createApp(config, { now: () => now, store: new BoundedSessionStore(capacity, () => now), logger: () => {} });
+  const config = { adminUsername: 'admin', adminPasswordHash: await hashPassword('admin-test'), username: 'shared', passwordHash: await hashPassword('test-password'), sessionSecret: 'test-secret-'.repeat(4), photoDirectory: directory, port: 3000, production: false, origin: 'http://localhost', ...overrides };
+  const store = new BoundedSessionStore(capacity, () => now);
+  const uploads = await UploadStorage.create(directory, () => now);
+  const instance = createApp(config, { uploads, now: () => now, store, logger: () => {} });
   const server = instance.app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Missing listener');
   const base = `http://127.0.0.1:${address.port}`;
-  t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); instance.close(); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await instance.close(); await rm(directory, { recursive: true, force: true }); });
   const request = (path: string, init: RequestInit = {}) => fetch(base + path, { redirect: 'manual', ...init });
   const login = (cookie = '', headers: Record<string, string> = {}) => request('/login', { method: 'POST', headers: { origin: config.origin, 'content-type': 'application/x-www-form-urlencoded', cookie, ...headers }, body: 'username=shared&password=test-password' });
-  return { directory, request, login, advance: (milliseconds: number) => { now += milliseconds; }, config };
+  return { directory, request, login, store, advance: (milliseconds: number) => { now += milliseconds; }, config };
 }
 function cookie(response: Response) { return response.headers.get('set-cookie')!.split(';')[0]!; }
 
@@ -109,4 +113,117 @@ test('file errors and escaping links never expose paths or bytes', async t => {
     const page = await f.request('/?number=' + number, { headers: { cookie: session } });
     assert.equal(page.status, 500); assert.ok(!(await page.text()).includes(f.directory));
   }
+});
+
+test('administrator credentials assign roles server-side and consultation cannot upload', async t => {
+  const f = await fixture(t);
+  const visitor = await f.request('/admin/upload');
+  assert.equal(visitor.status, 303);
+  const forged = await f.request('/login', { method: 'POST', headers: { origin: f.config.origin, 'content-type': 'application/x-www-form-urlencoded' }, body: 'username=shared&password=test-password&role=administrator' });
+  const consultation = cookie(forged);
+  for (const method of ['GET', 'POST']) {
+    assert.equal((await f.request('/admin/upload', { method, headers: { cookie: consultation, origin: f.config.origin } })).status, 403);
+  }
+  assert.equal((await f.request('/', { headers: { cookie: consultation } })).status, 200);
+  const admin = await f.request('/login', { method: 'POST', headers: { origin: f.config.origin, 'content-type': 'application/x-www-form-urlencoded' }, body: 'username=admin&password=admin-test' });
+  assert.equal(admin.status, 303);
+  const adminPage = await f.request('/', { headers: { cookie: cookie(admin) } });
+  assert.match(await adminPage.text(), /Upload a photo/);
+  const ordinary = await f.request('/', { headers: { cookie: consultation } });
+  assert.doesNotMatch(await ordinary.text(), /Upload a photo/);
+  assert.equal((await f.request('/admin/upload', { method: 'POST', headers: { cookie: cookie(admin), origin: 'https://evil.example' } })).status, 403);
+});
+
+ test('sessions without a recognized role must authenticate again', async t => {
+  const f = await fixture(t);
+  const session = cookie(await f.login());
+  const id = decodeURIComponent(session.split('=')[1]!).slice(2).split('.')[0]!;
+  await new Promise<void>((resolve, reject) => f.store.get(id, (error, data) => {
+    if (error || !data) { reject(error ?? new Error('Missing session')); return; }
+    delete data.role;
+    f.store.set(id, data, error => error ? reject(error) : resolve());
+  }));
+  assert.equal((await f.request('/', { headers: { cookie: session } })).status, 303);
+});
+
+async function adminSession(f) {
+  return cookie(await f.request('/login', { method: 'POST', headers: { origin: f.config.origin, 'content-type': 'application/x-www-form-urlencoded' }, body: 'username=admin&password=admin-test' }));
+}
+async function sendPhoto(f, session, number, bytes) {
+  const form = new FormData(); form.set('number', number);
+  form.set('photo', new Blob([bytes], { type: 'application/octet-stream' }), '../../phone.heic');
+  return f.request('/admin/upload', { method: 'POST', headers: { origin: f.config.origin, cookie: session }, body: form });
+}
+function token(html: string): string {
+  const match = html.match(/action="\/admin\/upload\/([a-f0-9]{64})\/confirm"/);
+  assert.ok(match, html); return match[1]!;
+}
+async function colourImage(colour = 'red') {
+  return sharp({ create: { width: 80, height: 40, channels: 3, background: colour } }).png().toBuffer();
+}
+test('actual PNG/JPEG/HEIC uploads publish private four-digit optimized PNGs', async t => {
+  const f = await fixture(t); const session = await adminSession(f);
+  const jpeg = await sharp(await colourImage()).jpeg().toBuffer();
+  for (const [index, bytes] of [await colourImage(), jpeg, await readFile('assets/heic-probe.heic')].entries()) {
+    const response = await sendPhoto(f, session, String(20 + index), bytes);
+    assert.equal(response.status, 303, await response.text());
+    const image = await f.request('/photos/' + (20 + index), { headers: { cookie: session } });
+    const output = Buffer.from(await image.arrayBuffer());
+    assert.equal(image.status, 200); assert.ok(output.length < 100000);
+    assert.equal((await sharp(output).metadata()).format, 'png');
+    assert.equal((await f.request('/photos/' + (20 + index))).status, 303);
+  }
+  assert.deepEqual(await readdir(join(f.directory, '.uploads')), []);
+});
+test('replacement confirmation, private preview, cancellation, expiry, conflict renewal and replay', async t => {
+  const f = await fixture(t); const session = await adminSession(f);
+  const consultation = cookie(await f.login());
+  const pending = token(await (await sendPhoto(f, session, '7', await colourImage())).text());
+  assert.deepEqual(await readFile(join(f.directory, '0007.png')), png);
+  assert.equal((await f.request(`/admin/upload/${pending}/preview`, { headers: { cookie: session } })).status, 200);
+  assert.equal((await f.request(`/admin/upload/${pending}/preview`, { headers: { cookie: consultation } })).status, 403);
+  const other = await adminSession(f);
+  assert.equal((await f.request(`/admin/upload/${pending}/preview`, { headers: { cookie: other } })).status, 404);
+  const post = (id, action, owner = session) => f.request(`/admin/upload/${id}/${action}`, { method: 'POST', headers: { cookie: owner, origin: f.config.origin } });
+  const competing = token(await (await sendPhoto(f, other, '7', await colourImage('blue'))).text());
+  assert.equal((await post(competing, 'confirm', other)).status, 303);
+  const changed = await readFile(join(f.directory, '0007.png'));
+  const stale = await post(pending, 'confirm');
+  assert.equal(stale.status, 409);
+  const renewed = token(await stale.text());
+  assert.deepEqual(await readFile(join(f.directory, '0007.png')), changed);
+  assert.equal((await post(renewed, 'confirm')).status, 303);
+  assert.equal((await post(renewed, 'confirm')).status, 404);
+  const current = await readFile(join(f.directory, '0007.png'));
+  const cancel = token(await (await sendPhoto(f, session, '7', await colourImage('green'))).text());
+  assert.equal((await post(cancel, 'cancel')).status, 303);
+  assert.deepEqual(await readFile(join(f.directory, '0007.png')), current);
+  const expired = token(await (await sendPhoto(f, session, '7', await colourImage('green'))).text());
+  f.advance(10 * 60 * 1000);
+  assert.equal((await post(expired, 'confirm')).status, 404);
+  assert.deepEqual(await readdir(join(f.directory, '.uploads')), []);
+});
+test('invalid uploads, safe targets and role/origin rejection leave existing image and staging unchanged', async t => {
+  const f = await fixture(t); const session = await adminSession(f);
+  const consultation = cookie(await f.login());
+  const bytes = await colourImage();
+  assert.equal((await sendPhoto(f, consultation, '7', bytes)).status, 403);
+  assert.equal((await sendPhoto(f, session, '../secret', bytes)).status, 400);
+  assert.equal((await sendPhoto(f, session, '7', Buffer.from('not an image'))).status, 422);
+  await symlink('/etc/passwd', join(f.directory, '0020.png'));
+  assert.equal((await sendPhoto(f, session, '20', bytes)).status, 422);
+  const foreign = await f.request('/admin/upload', { method: 'POST', headers: { cookie: session, origin: 'https://evil.example' }, body: 'not-multipart' });
+  assert.equal(foreign.status, 403);
+  assert.deepEqual(await readFile(join(f.directory, '0007.png')), png);
+  assert.deepEqual(await readdir(join(f.directory, '.uploads')), []);
+  // A failed conversion must release the slot for the next valid upload.
+  assert.equal((await sendPhoto(f, session, '21', bytes)).status, 303);
+});
+test('logout during slow image optimization prevents publication', async t => {
+  const f = await fixture(t); const session = await adminSession(f);
+  const bytes = await colourImage();
+  const inflight = sendPhoto(f, session, '25', bytes);
+  await f.request('/logout', { method: 'POST', headers: { cookie: session, origin: f.config.origin } });
+  assert.ok([303, 403].includes((await inflight).status));
+  await assert.rejects(readFile(join(f.directory, '0025.png')), { code: 'ENOENT' });
 });

@@ -106,14 +106,9 @@ Le code produit doit être :
 - maintenable ;
 - cohérent avec le code existant.
 
-Respecte les conventions du projet concernant :
-- nommage ;
-- formatage ;
-- organisation des fichiers ;
-- gestion des erreurs ;
-- logs ;
-- documentation ;
-- typage.
+Respecte les conventions du projet :
+- les classes et méthodes doivent être documentées ;
+- toutes les erreurs doivent être tracées dans la console.
 
 Évite :
 - la duplication inutile ;
@@ -124,6 +119,7 @@ Respecte les conventions du projet concernant :
 - le code mort.
 
 Ne refactorise pas du code sans rapport avec la tâche sauf si cela est nécessaire à sa réalisation.
+
 
 ---
 

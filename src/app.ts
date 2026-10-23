@@ -1,4 +1,6 @@
 import express from 'express';
+import { uploadRoutes } from './upload-routes.js';
+import type { UploadStorage } from './upload-storage.js';
 import type { ErrorRequestHandler } from 'express';
 import session from 'express-session';
 import { pipeline } from 'node:stream/promises';
@@ -8,10 +10,12 @@ import { BoundedSessionStore, LoginLimiter, SESSION_LIFETIME, SessionCapacityErr
 import { isMissing, normalizeNumber, openPhoto } from './photos.js';
 import { loginView, searchView, stylesheet } from './views.js';
 interface Options {
+  uploads?: UploadStorage;
   now?: () => number;
   store?: BoundedSessionStore;
   logger?: (event: string, error: unknown) => void;
 }
+/** Construct the HTTP application without binding a network listener. */
 export function createApp(config: Config, options: Options = {}) {
   const app = express();
   const now = options.now ?? Date.now;
@@ -44,19 +48,24 @@ export function createApp(config: Config, options: Options = {}) {
   app.get('/login', (_req, res) => { res.send(loginView()); });
   app.post('/login', async (req, res, next) => {
     if (!limiter.allow(req.ip ?? 'unknown')) { res.status(429).set('Retry-After', '900').send(loginView('Too many attempts. Try again later.')); return; }
-    const { username, password } = req.body as Record<string, unknown>;
-    const validPassword = typeof password === 'string' && password.length <= 1024 && await verifyPassword(password, config.passwordHash);
-    if (username !== config.username || !validPassword) { res.status(401).send(loginView('Invalid username or password.')); return; }
+    const { username, password } = (req.body ?? {}) as Record<string, unknown>;
+    const role = username === config.adminUsername ? 'administrator' : 'consultation';
+    const hash = role === 'administrator' ? config.adminPasswordHash : config.passwordHash;
+    const validPassword = typeof password === 'string' && password.length <= 1024 && await verifyPassword(password, hash);
+    if ((username !== config.username && username !== config.adminUsername) || !validPassword) { res.status(401).send(loginView('Invalid username or password.')); return; }
+    await options.uploads?.cancelSession(req.sessionID);
     req.session.regenerate(error => {
       if (error) { next(error); return; }
       req.session.authenticatedAt = now();
+      req.session.role = role;
       req.session.save(error => {
         if (error) req.session.destroy(() => next(error));
         else res.redirect(303, '/');
       });
     });
   });
-  app.post('/logout', (req, res, next) => {
+  app.post('/logout', async (req, res, next) => {
+    await options.uploads?.cancelSession(req.sessionID);
     req.session.destroy(error => {
       if (error) { next(error); return; }
       res.clearCookie('maxial.sid', { httpOnly: true, secure: config.production, sameSite: 'lax' });
@@ -64,22 +73,28 @@ export function createApp(config: Config, options: Options = {}) {
     });
   });
   app.use((req, res, next) => {
-    if (req.session.authenticatedAt === undefined || now() - req.session.authenticatedAt >= SESSION_LIFETIME) {
+    if (!['consultation', 'administrator'].includes(req.session.role ?? '') || req.session.authenticatedAt === undefined || now() - req.session.authenticatedAt >= SESSION_LIFETIME) {
       res.redirect(303, '/login'); return;
     }
     next();
   });
+  app.use('/admin', (req, res, next) => {
+    if (req.session.role !== 'administrator') { log('administrator-access-denied', undefined); res.status(403).send('Administrator access required.'); return; }
+    next();
+  });
+  if (options.uploads) app.use('/admin', uploadRoutes(options.uploads, now));
   app.get('/', async (req, res) => {
-    if (req.query.number === undefined) { res.send(searchView()); return; }
+    const renderSearch = (value = '', message = '', number?: string) => searchView(value, message, number, req.session.role === 'administrator');
+    if (req.query.number === undefined) { res.send(renderSearch()); return; }
     const number = normalizeNumber(req.query.number);
-    if (!number) { res.status(400).send(searchView('', 'Enter one to four digits (0–9999).')); return; }
+    if (!number) { res.status(400).send(renderSearch('', 'Enter one to four digits (0–9999).')); return; }
     try {
       const file = await openPhoto(config.photoDirectory, number);
       await file.close();
-      res.send(searchView(number, '', number));
+      res.send(renderSearch(number, '', number));
     } catch (error) {
-      if (isMissing(error)) res.send(searchView(number, 'No photo exists for this number.'));
-      else { log('photo-read-failed', error); res.status(500).send(searchView(number, 'Photo temporarily unavailable.')); }
+      if (isMissing(error)) res.send(renderSearch(number, 'No photo exists for this number.'));
+      else { log('photo-read-failed', error); res.status(500).send(renderSearch(number, 'Photo temporarily unavailable.')); }
     }
   });
   app.get('/photos/:number', async (req, res) => {
@@ -105,5 +120,5 @@ export function createApp(config: Config, options: Options = {}) {
     if (!res.headersSent) res.status(500).send('Service temporarily unavailable.');
   };
   app.use(errors);
-  return { app, close: () => store.close() };
+  return { app, close: async () => { store.close(); await options.uploads?.close(); } };
 }
